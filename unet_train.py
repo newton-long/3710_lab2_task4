@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from glob import glob
+from glob import glob, os
 from PIL import Image
 
 import torch
@@ -11,6 +11,7 @@ from torchvision import transforms
 import torch.nn.functional as F
 
 import matplotlib.pyplot as plt
+
 
 # ------------------
 # CONFIG
@@ -53,9 +54,9 @@ def visualize_predictions(model, dataset, device=DEVICE, num_samples=3):
 # ------------------
 class OASISSegDataset(Dataset):
     """
-    Simple dataset for OASIS segmentation.
-    Assumes image and mask folders contain matching PNGs
-    with the same sorted order.
+    Dataset for OASIS segmentation.
+    Loads MRI slices and corresponding masks, resizes them,
+    and remaps mask pixel values {0,85,170,255} → {0,1,2,3}.
     """
     def __init__(self, img_dir, mask_dir, img_size=128):
         self.img_paths = sorted(glob(os.path.join(img_dir, "*.png")))
@@ -70,27 +71,37 @@ class OASISSegDataset(Dataset):
         if len(self.img_paths) != len(self.mask_paths):
             print(f"[WARN] Unequal counts: {len(self.img_paths)} imgs vs {len(self.mask_paths)} masks")
 
+        # Image transform (grayscale, resize, tensor)
         self.img_transform = transforms.Compose([
             transforms.Grayscale(num_output_channels=1),
             transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
         ])
-        self.mask_resize = transforms.Resize((img_size, img_size), interpolation=transforms.InterpolationMode.NEAREST)
+
+        # Mask transform (resize only, keep as integer labels)
+        self.mask_resize = transforms.Resize(
+            (img_size, img_size),
+            interpolation=transforms.InterpolationMode.NEAREST
+        )
 
     def __len__(self):
         return len(self.img_paths)
 
     def __getitem__(self, idx):
+        # Load image and mask
         img = Image.open(self.img_paths[idx]).convert("L")
         mask = Image.open(self.mask_paths[idx]).convert("L")
 
+        # Apply transforms
         img = self.img_transform(img)
         mask = self.mask_resize(mask)
-        mask = torch.from_numpy(np.array(mask, dtype=np.int64))
 
-        # Map {0,255} → {0,1} for binary masks
-        if mask.max() == 255:
-            mask = (mask > 127).long()
+        # Convert to numpy for label remapping
+        mask = np.array(mask, dtype=np.int64)
+
+        # Remap {0,85,170,255} → {0,1,2,3}
+        mask = mask // 85
+        mask = torch.from_numpy(mask)
 
         return img, mask
 
@@ -177,6 +188,11 @@ def dice_coefficient(logits, targets, eps=1e-6):
 # SANITY TEST + TRAINING + TEST EVAL + VISUALISATION
 # ------------------
 if __name__ == "__main__":
+    
+    # mask_files = glob.glob("./OASIS/keras_png_slices_seg_train/*.png")
+    # sample_mask = np.array(Image.open(mask_files[0]))
+    # print("Unique values in sample mask:", np.unique(sample_mask))
+    
     # ---- TRAIN DATA ----
     train_imgs = os.path.join(DATA_DIR, "keras_png_slices_train")
     train_msks = os.path.join(DATA_DIR, "keras_png_slices_seg_train")
@@ -187,7 +203,7 @@ if __name__ == "__main__":
     train_loader = DataLoader(ds, batch_size=8, shuffle=True)
 
     # ---- MODEL SETUP ----
-    model = UNet(in_channels=1, num_classes=2).to(DEVICE)
+    model = UNet(in_channels=1, num_classes=4).to(DEVICE)
     ce_loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
@@ -199,7 +215,7 @@ if __name__ == "__main__":
     print("Initial loss:", ce_loss_fn(logits, masks).item())
 
     # ---- TRAINING LOOP ----
-    EPOCHS = 30   # adjust to 20–30 later if you want better results
+    EPOCHS = 2   # adjust to 20–30 later if you want better results
     for epoch in range(1, EPOCHS+1):
         model.train()
         total_loss = 0.0
