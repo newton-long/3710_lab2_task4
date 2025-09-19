@@ -95,11 +95,11 @@ class OASISSegDataset(Dataset):
         return img, mask
 
 
-# ------------------
+# ----------------------------------- the model
 # UNET MODEL
 # ------------------
 class DoubleConv(nn.Module):
-    """(Conv → BN → ReLU) ×2"""
+    """(Conv → BN → ReLU) x2"""
     def __init__(self, in_ch, out_ch):
         super().__init__()
         self.block = nn.Sequential(
@@ -116,7 +116,7 @@ class DoubleConv(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels=1, num_classes=2, base_ch=32):
+    def __init__(self, in_channels=1, num_classes=4, base_ch=32):
         super().__init__()
         self.inc   = DoubleConv(in_channels, base_ch)          # 1 → 32
         self.down1 = nn.Sequential(nn.MaxPool2d(2), DoubleConv(base_ch, base_ch*2))   # 32 → 64
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     print("Initial loss:", ce_loss_fn(logits, masks).item())
 
     # ---- TRAINING LOOP ----
-    EPOCHS = 2   # adjust to 20–30 later if you want better results
+    EPOCHS = 30   # adjust to 20–30 later if you want better results
     for epoch in range(1, EPOCHS+1):
         model.train()
         total_loss = 0.0
