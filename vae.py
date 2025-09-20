@@ -87,6 +87,10 @@ class VAE(nn.Module):
             nn.Sigmoid(),
         )
     
+    """
+    The reparameterization trick is essential in VAEs because it lets you sample latent vectors from a distribution while still allowing backpropagation.
+    This makes training possible and gives the model a smooth, generative latent space instead of just fixed encodings.
+    """
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
